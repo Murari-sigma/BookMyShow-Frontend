@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Movie Details - BookMyShow</title>
+    <link rel="stylesheet" href="style.css">
+   
+</head>
+<body>
+
+    <nav class="navbar">
+        <a href="index.html" class="logo">Book<span>My</span>Show</a>
+        <div class="nav-links">
+            <a href="index.html">Home</a>
+            <a href="movies.html" class="active">Movies</a>
+            <a href="theaters.html">Theaters</a>
+            <a href="bookings.html">My Bookings</a>
+        </div>
+        <div class="nav-user" id="nav-user"></div>
+    </nav>
+
+    <div class="container">
+        <!-- Movie Details Container -->
+        <div id="movie-detail" class="movie-detail">
+            <p>Loading movie details...</p>
+        </div>
+
+        <!-- Available Shows Section -->
+        <h2 class="section-title">Available Shows</h2>
+        <div id="shows-list">
+            <p>Loading shows...</p>
+        </div>
+    </div>
+
+    <!-- SEAT SELECTION MODAL -->
+    <div class="modal-overlay" id="seat-modal" style="display:none;">
+        <div class="modal">
+            <button class="modal-close" onclick="closeSeatModal()">&times;</button>
+            <h2 id="seat-modal-title">Select Seats</h2>
+            <div class="screen-label">SCREEN THIS WAY</div>
+            <div class="screen-indicator"></div>
+            
+            <div class="seats-container">
+                <div class="seat-map" id="seat-map"></div>
+            </div>
+            
+            <div class="booking-summary" id="booking-summary" style="display:none;">
+                <h3>Booking Summary</h3>
+                <div id="summary-content"></div>
+            </div>
+            
+            <button class="btn btn-primary btn-block" id="confirm-btn" onclick="confirmBooking()" disabled>Confirm Booking</button>
+        </div>
+    </div>
+
+    <script src="api.js"></script>
+    <script src="utils.js"></script>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const movieId = params.get('id');
+        let currentShow = null;
+        let selectedSeatIds = [];
+        let globalShowsList = [];
+
+        document.addEventListener("DOMContentLoaded", () => {
+            loadMovie();
+        });
+
+        async function loadMovie() {
+            const detailEl = document.getElementById('movie-detail');
+            if (!movieId) {
+                if (detailEl) detailEl.innerHTML = '<div><p>URL me Movie ID nahi mil payi.</p></div>';
+                return;
+            }
+
+            try {
+                const movie = await MovieAPI.getById(movieId);
+                renderMovieDetails(movie);
+            } catch (e) {
+                console.error("Movie fetch error:", e);
+                if (detailEl) detailEl.innerHTML = '<div><p>Movie details load nahi ho payi.</p></div>';
+            }
+
+            loadShows();
+        }
+
+        // Complete renderMovieDetails function with Poster Image Fix
+        function renderMovieDetails(movie) {
+            const detailContainer = document.getElementById('movie-detail');
+            if (!detailContainer) return;
+
+            if (!movie) {
+                detailContainer.innerHTML = '<div><p>Movie details missing.</p></div>';
+                return;
+            }
+
+            // Backend se aane wale sabhi image property names check kar rahe hain
+            const imageSrc = movie.posterUrl || movie.poster || movie.imageUrl || movie.image || movie.bannerUrl;
+
+            const posterHTML = imageSrc 
+                ? `<img src="${imageSrc}" alt="${movie.title || 'Movie'}" class="movie-poster-img" onerror="this.onerror=null; this.outerHTML='<div class=\'movie-poster\'>🎬</div>';">`
+                : `<div class="movie-poster">🎬</div>`;
+
+            detailContainer.innerHTML = `
+                ${posterHTML}
+                <div class="movie-info">
+                    <h1>${movie.title || 'Movie'}</h1>
+                    <div class="movie-badges">
+                        ${movie.genre ? `<span class="badge badge-genre">${movie.genre}</span>` : ''}
+                        ${movie.language ? `<span class="badge badge-lang">${movie.language}</span>` : ''}
+                        ${movie.rating ? `<span class="badge badge-rating">⭐ ${movie.rating}</span>` : ''}
+                        ${movie.durationMinutes ? `<span class="badge badge-duration">⏱ ${movie.durationMinutes} min</span>` : ''}
+                    </div>
+                    <p class="movie-description">${movie.description || 'No description available.'}</p>
+                    ${movie.releaseDate ? `<p class="movie-release">📅 Release: ${movie.releaseDate}</p>` : ''}
+                </div>
+            `;
+        }
+
+        async function loadShows() {
+            const container = document.getElementById('shows-list');
+            container.innerHTML = '<p>Loading available shows...</p>';
+
+            try {
+                const fetchedShows = await ShowAPI.getByMovie(movieId);
+                globalShowsList = fetchedShows || [];
+
+                if (!globalShowsList || globalShowsList.length === 0) {
+                    container.innerHTML = '<p>Is movie ke liye koi shows available nahi hain.</p>';
+                    return;
+                }
+
+                container.innerHTML = globalShowsList.map((s, index) => {
+                    const theaterName = s.theater ? (s.theater.name || s.theater) : (s.screen && s.screen.theater ? s.screen.theater.name : 'Cinema');
+                    const screenName = s.screen ? (s.screen.name || s.screen) : 'Audi 1';
+                    const location = s.location || (s.theater && s.theater.location) || (s.screen && s.screen.theater && s.screen.theater.city ? s.screen.theater.city.name : 'Delhi');
+                    const price = s.ticketPrice || s.price || 200;
+                    const showDate = s.showDate || s.date || '';
+                    const startTime = s.startTime || s.showTime || s.time || '15:00';
+                    const endTime = s.endTime || '';
+
+                    return `
+                        <div class="show-card">
+                            <div class="show-info">
+                                <h4>🎥 ${theaterName} - <span>${screenName}</span></h4>
+                                <p>📅 ${showDate} &nbsp; 🕒 ${startTime} ${endTime ? '- ' + endTime : ''}</p>
+                                <p class="location">📍 ${location}</p>
+                            </div>
+                            <div class="show-meta">
+                                <div class="price">₹${price}</div>
+                                <button type="button" class="btn-select-seats" onclick="selectShowByIndex(${index})">Select Seats</button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+            } catch (e) {
+                console.error("Load shows error:", e);
+                container.innerHTML = '<p>Shows load nahi ho paye. Please try again.</p>';
+            }
+        }
+
+        function selectShowByIndex(index) {
+            if (globalShowsList[index]) {
+                selectShow(globalShowsList[index]);
+            }
+        }
+
+        async function selectShow(show) {
+            currentShow = show;
+            selectedSeatIds = [];
+
+            const screenName = show.screen ? (show.screen.name || show.screen) : "Audi 1";
+            const titleEl = document.getElementById('seat-modal-title');
+            if (titleEl) {
+                titleEl.textContent = `${screenName} — ${show.showDate || ''} ${show.startTime || show.showTime || ''}`;
+            }
+
+            const modalEl = document.getElementById('seat-modal');
+            modalEl.style.display = 'flex';
+
+            const mapEl = document.getElementById('seat-map');
+            mapEl.innerHTML = '<p>Loading seat layout...</p>';
+
+            try {
+                const screenId = show.screen ? (show.screen.id || show.screen) : (show.screenId || 1);
+                
+                const [allSeats, availableSeats] = await Promise.all([
+                    SeatAPI.getByScreen(screenId).catch(() => []),
+                    BookingAPI.getAvailableSeats(show.id).catch(() => [])
+                ]);
+
+                const availableIds = (availableSeats || []).map(as => as.id);
+                renderSeatMap(allSeats || [], availableIds);
+            } catch (e) {
+                console.error("Seats load error:", e);
+                mapEl.innerHTML = '<p>Error loading seats.</p>';
+            }
+        }
+
+        function renderSeatMap(allSeats, availableIds) {
+            const mapEl = document.getElementById('seat-map');
+            if (!mapEl) return;
+            mapEl.innerHTML = '';
+
+            if (!allSeats || allSeats.length === 0) {
+                mapEl.innerHTML = '<p>No seats configured for this screen.</p>';
+                return;
+            }
+
+            const rows = {};
+            allSeats.forEach(seat => {
+                let rowName = seat.row || seat.rowName;
+                if (!rowName && seat.seatNumber) {
+                    rowName = seat.seatNumber.match(/^[A-Za-z]+/)?.[0] || seat.seatNumber.charAt(0);
+                }
+                if (!rowName) rowName = 'A';
+                rowName = rowName.toUpperCase();
+
+                if (!rows[rowName]) rows[rowName] = [];
+                rows[rowName].push(seat);
+            });
+
+            Object.keys(rows).sort().forEach(row => {
+                const rowDiv = document.createElement('div');
+                rowDiv.className = 'seat-row';
+
+                const labelDiv = document.createElement('div');
+                labelDiv.className = 'seat-row-label';
+                labelDiv.textContent = row;
+                rowDiv.appendChild(labelDiv);
+
+                const seatsRowWrapper = document.createElement('div');
+                seatsRowWrapper.className = 'seats-row-wrapper';
+
+                rows[row].sort((a, b) => {
+                    const numA = parseInt((a.seatNumber || '').replace(/\D/g, '')) || 0;
+                    const numB = parseInt((b.seatNumber || '').replace(/\D/g, '')) || 0;
+                    return numA - numB;
+                }).forEach(seat => {
+                    const isAvailable = availableIds.includes(seat.id);
+                    const seatDiv = document.createElement('div');
+                    seatDiv.className = `seat ${isAvailable ? 'available' : 'booked'}`;
+                    seatDiv.textContent = seat.col || (seat.seatNumber ? seat.seatNumber.replace(/^[A-Za-z]+/, '') : seat.id);
+
+                    if (isAvailable) {
+                        seatDiv.onclick = () => toggleSeat(seatDiv, seat.id);
+                    }
+                    seatsRowWrapper.appendChild(seatDiv);
+                });
+
+                rowDiv.appendChild(seatsRowWrapper);
+                mapEl.appendChild(rowDiv);
+            });
+
+            updateSummary();
+        }
+
+        function toggleSeat(el, id) {
+            if (selectedSeatIds.includes(id)) {
+                selectedSeatIds = selectedSeatIds.filter(sid => sid !== id);
+                el.classList.remove('selected');
+                el.classList.add('available');
+            } else {
+                selectedSeatIds.push(id);
+                el.classList.remove('available');
+                el.classList.add('selected');
+            }
+            updateSummary();
+        }
+
+        function updateSummary() {
+            const summaryEl = document.getElementById('booking-summary');
+            const contentEl = document.getElementById('summary-content');
+            const confirmBtn = document.getElementById('confirm-btn');
+
+            if (!summaryEl || !contentEl || !confirmBtn) return;
+
+            if (selectedSeatIds.length > 0) {
+                summaryEl.style.display = 'block';
+                const pricePerTicket = currentShow ? (currentShow.ticketPrice || currentShow.price || 200) : 200;
+                const totalAmount = selectedSeatIds.length * pricePerTicket;
+                contentEl.innerHTML = `
+                    <div class="summary-row"><span>Seats selected:</span><span>${selectedSeatIds.length}</span></div>
+                    <div class="summary-row"><span>Price per ticket:</span><span>₹${pricePerTicket}</span></div>
+                    <div class="summary-row total"><span>Total Amount:</span><span>₹${totalAmount}</span></div>
+                `;
+                confirmBtn.disabled = false;
+            } else {
+                summaryEl.style.display = 'none';
+                confirmBtn.disabled = true;
+            }
+        }
+
+        function closeSeatModal() {
+            document.getElementById('seat-modal').style.display = 'none';
+        }
+
+        async function confirmBooking() {
+            const user = typeof getLoggedInUser === 'function' ? getLoggedInUser() : { id: 1 };
+            if (!user) {
+                showToast("Please login to book tickets");
+                return;
+            }
+            if (selectedSeatIds.length === 0) {
+                showToast("Select at least one seat");
+                return;
+            }
+
+            const btn = document.getElementById('confirm-btn');
+            btn.disabled = true;
+            btn.textContent = 'Processing...';
+
+            const bookingData = {
+                userId: user.id,
+                showId: currentShow.id,
+                seatIds: selectedSeatIds
+            };
+
+            try {
+                await BookingAPI.create(bookingData);
+                showToast("🎉 Booking confirmed!");
+                closeSeatModal();
+                setTimeout(() => {
+                  window.location.href = 'bookings.html';
+                }, 1500);
+                
+            } catch (e) {
+                showToast(e.message || "Booking failed.");
+                btn.disabled = false;
+                btn.textContent = 'Confirm Booking';
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Bookings - BookMyShow</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <nav class="navbar">
+        <a href="index.html" class="logo">Book<span>My</span>Show</a>
+        <div class="nav-links">
+            <a href="index.html">Home</a>
+            <a href="movies.html">Movies</a>
+            <a href="theaters.html">Theaters</a>
+            <a href="bookings.html" class="active">My Bookings</a>
+        </div>
+        <div class="nav-user" id="nav-user"></div>
+    </nav>
+
+    <div class="container">
+        <h2 class="section-title" style="text-align: center; margin-bottom: 1.5rem;">My Bookings</h2>
+        <div id="bookings-list" style="display: flex; flex-direction: column; gap: 1rem; align-items: center; width: 100%;"></div>
+    </div>
+
+   <script src="api.js"></script>
+<script src="utils.js"></script>
+<script>
+async function loadBookings() {
+    const user = getLoggedInUser();
+    if (!user) {
+        document.getElementById('bookings-list').innerHTML = `
+            <div class="empty-state">
+                <div class="icon">🔒</div>
+                <p>Please <a href="login.html" style="color:var(--primary);font-weight:700;">login</a> to view bookings.</p>
+            </div>`;
+        return;
+    }
+
+    showLoading('bookings-list');
+    try {
+        const bookings = await BookingAPI.getByUser(user.id);
+        if (bookings.length === 0) {
+            showEmpty('bookings-list', 'No bookings yet. Go book some movies! 🎬');
+            return;
+        }
+document.getElementById('bookings-list').innerHTML = bookings.map(b => `
+           <div style="width: 100%; max-width: 750px; background: rgba(255, 255, 255, 0.05); border-radius: 12px; padding: 1.2rem; margin-bottom: 1rem; border: 1px solid rgba(255, 255, 255, 0.1); display: flex !important; justify-content: space-between !important; align-items: center !important;">
+                
+                <!-- Left Side Details -->
+                <div style="display: flex; flex-direction: column; gap: 4px; text-align: left;">
+                    <h3 style="margin: 0; font-size: 1.15rem; color: #fff;">🎬 ${b.show?.movie?.title || 'Movie'}</h3>
+                    <p style="margin: 0; color: #a0a0a0; font-size: 0.85rem; line-height: 1.5;">
+                        🏛️ ${b.show?.screen?.theater?.name || ''} - ${b.show?.screen?.name || ''}<br>
+                        📅 ${b.show?.showDate || ''} &nbsp; ⏰ ${b.show?.startTime || ''}<br>
+                        💺 Seats: ${b.seats ? b.seats.map(s => s.seatNumber).join(', ') : 'N/A'}<br>
+                        🗓️ Booked: ${b.bookedAt ? new Date(b.bookedAt).toLocaleString() : ''}
+                    </p>
+                </div>
+
+                <!-- Right Side Price & Action -->
+                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0;">
+                    <div style="font-size: 1.3rem; font-weight: 700; color: ${b.status === 'CANCELLED' ? '#e94560' : '#2ecc71'};">
+                        ₹${b.totalPrice || 0}
+                    </div>
+                    <span style="padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; background: ${b.status === 'CANCELLED' ? '#e94560' : '#2ecc71'}; color: #fff;">
+                        ${b.status}
+                    </span>
+                    ${b.status !== 'CANCELLED' ? `
+                        <button class="btn btn-sm btn-danger" style="margin-top: 4px; padding: 4px 12px; font-size: 0.8rem; cursor: pointer;" onclick="cancelBooking('${b.id}')">
+                            Cancel
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+        `).join('');
+    } catch (e) {
+        console.error("Bookings error:", e);
+    }
+}
+
+async function cancelBooking(id) {
+    if (!confirm('Are you sure you want to cancel this booking?')) return;
+    try {
+        await BookingAPI.cancel(id);
+        showToast('Booking cancelled', 'success');
+        loadBookings();
+    } catch (e) {
+        showToast(e.message, 'error');
+    }
+}
+
+loadBookings();
+</script>
+</body>
+</html>
